@@ -18,7 +18,8 @@ class AACExtension {
     constructor(private context: vscode.ExtensionContext) {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
         this.statusBarItem.text = '$(git-commit) AAC';
-        this.statusBarItem.tooltip = 'AutoAiCommit - Ready';
+        this.statusBarItem.tooltip = 'AutoAiCommit - Ready (クリックで設定メニュー)';
+        this.statusBarItem.command = 'aac.showSettingsMenu';
         this.statusBarItem.show();
         this.context.subscriptions.push(this.statusBarItem);
     }
@@ -35,6 +36,9 @@ class AACExtension {
 
         // 初回起動時のAPIキー確認
         await this.checkApiKeySetup();
+        
+        // ステータスバーの初期表示を更新
+        await this.updateStatusBarDefault();
     }
 
     private async checkApiKeySetup() {
@@ -135,7 +139,7 @@ class AACExtension {
             console.error('AAC Error:', error);
         } finally {
             this.isProcessing = false;
-            this.updateStatusBar('$(git-commit) AAC', 'AutoAiCommit - Ready');
+            await this.updateStatusBarDefault();
         }
     }
 
@@ -218,28 +222,26 @@ git diffから、以下のルールで日本語のコミットメッセージを
         };
     }
 
-    private updateStatusBar(text: string, tooltip: string) {
-        this.statusBarItem.text = text;
-        this.statusBarItem.tooltip = tooltip;
+    private updateStatusBar(text?: string, tooltip?: string) {
+        if (text && tooltip) {
+            this.statusBarItem.text = text;
+            this.statusBarItem.tooltip = tooltip;
+        } else {
+            // デフォルトの状態表示を更新
+            this.updateStatusBarDefault();
+        }
     }
 
-    async generateCommitMessageCommand() {
-        if (!this.gitExtension?.getAPI) {
-            vscode.window.showErrorMessage('Git拡張機能が利用できません。');
-            return;
-        }
-
-        const git = this.gitExtension.getAPI(1);
-        const repos = git.repositories;
+    private async updateStatusBarDefault() {
+        const config = vscode.workspace.getConfiguration('aac');
+        const autoCommitEnabled = config.get<boolean>('autoCommitEnabled', false);
+        const hasApiKey = !!(await this.context.secrets.get('aac.geminiApiKey'));
         
-        if (repos.length === 0) {
-            vscode.window.showErrorMessage('Gitリポジトリが見つかりません。');
-            return;
-        }
-
-        // アクティブなリポジトリまたは最初のリポジトリを使用
-        const repo = repos[0];
-        await this.generateCommitMessage(repo);
+        const autoIcon = autoCommitEnabled ? '$(check)' : '$(x)';
+        const apiIcon = hasApiKey ? '$(key)' : '$(warning)';
+        
+        this.statusBarItem.text = `$(git-commit) AAC ${autoIcon}${apiIcon}`;
+        this.statusBarItem.tooltip = `AutoAiCommit - 自動コミット: ${autoCommitEnabled ? '有効' : '無効'}, APIキー: ${hasApiKey ? '設定済み' : '未設定'} (クリックで設定メニュー)`;
     }
 
     toggleAutoCommit() {
@@ -249,6 +251,9 @@ git diffから、以下のルールで日本語のコミットメッセージを
         
         const newStatus = !currentValue ? '有効' : '無効';
         vscode.window.showInformationMessage(`自動コミットを${newStatus}にしました。`);
+        
+        // ステータスバーを更新
+        this.updateStatusBarDefault();
     }
 
     async setApiKey() {
@@ -262,6 +267,9 @@ git diffから、以下のルールで日本語のコミットメッセージを
         if (apiKey && apiKey.trim()) {
             await this.context.secrets.store('aac.geminiApiKey', apiKey.trim());
             vscode.window.showInformationMessage('Gemini APIキーが保存されました。');
+            
+            // ステータスバーを更新
+            await this.updateStatusBarDefault();
         }
     }
 
@@ -281,6 +289,60 @@ git diffから、以下のルールで日本語のコミットメッセージを
             vscode.window.showInformationMessage('カスタムプロンプトが保存されました。');
         }
     }
+
+    async showSettingsMenu() {
+        const config = vscode.workspace.getConfiguration('aac');
+        const autoCommitEnabled = config.get<boolean>('autoCommitEnabled', false);
+        const hasApiKey = !!(await this.context.secrets.get('aac.geminiApiKey'));
+        
+        const autoCommitStatus = autoCommitEnabled ? '✅ 有効' : '❌ 無効';
+        const apiKeyStatus = hasApiKey ? '✅ 設定済み' : '❌ 未設定';
+        
+        const menuItems = [
+            {
+                label: `$(gear) 自動コミット: ${autoCommitStatus}`,
+                description: '自動コミットのON/OFFを切り替え',
+                action: 'toggleAutoCommit'
+            },
+            {
+                label: `$(key) APIキー: ${apiKeyStatus}`,
+                description: 'Gemini APIキーを設定',
+                action: 'setApiKey'
+            },
+            {
+                label: '$(edit) カスタムプロンプト設定',
+                description: 'プロンプトをカスタマイズ',
+                action: 'setCustomPrompt'
+            },
+            {
+                label: '$(settings-gear) VSCode設定を開く',
+                description: 'AAC設定をVSCodeの設定画面で編集',
+                action: 'openSettings'
+            }
+        ];
+
+        const selectedItem = await vscode.window.showQuickPick(menuItems, {
+            placeHolder: 'AAC (AutoAiCommit) 設定メニュー',
+            title: 'AAC設定'
+        });
+
+        if (selectedItem) {
+            switch (selectedItem.action) {
+                case 'toggleAutoCommit':
+                    this.toggleAutoCommit();
+                    break;
+                case 'setApiKey':
+                    await this.setApiKey();
+                    break;
+                case 'setCustomPrompt':
+                    await this.setCustomPrompt();
+                    break;
+                case 'openSettings':
+                    await vscode.commands.executeCommand('workbench.action.openSettings', '@ext:aac');
+                    break;
+            }
+        }
+    }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -290,10 +352,6 @@ export function activate(context: vscode.ExtensionContext) {
     aacExtension.initialize();
 
     // コマンドの登録
-    const generateCommand = vscode.commands.registerCommand('aac.generateCommitMessage', () => {
-        aacExtension.generateCommitMessageCommand();
-    });
-
     const toggleCommand = vscode.commands.registerCommand('aac.toggleAutoCommit', () => {
         aacExtension.toggleAutoCommit();
     });
@@ -306,7 +364,11 @@ export function activate(context: vscode.ExtensionContext) {
         aacExtension.setCustomPrompt();
     });
 
-    context.subscriptions.push(generateCommand, toggleCommand, setApiKeyCommand, setCustomPromptCommand);
+    const showSettingsMenuCommand = vscode.commands.registerCommand('aac.showSettingsMenu', () => {
+        aacExtension.showSettingsMenu();
+    });
+
+    context.subscriptions.push(toggleCommand, setApiKeyCommand, setCustomPromptCommand, showSettingsMenuCommand);
 }
 
 export function deactivate() {

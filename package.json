@@ -14,10 +14,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "aac.generateCommitMessage",
-        "title": "AAC: Generate Commit Message"
-      },
-      {
         "command": "aac.toggleAutoCommit",
         "title": "AAC: Toggle Auto Commit"
       },
@@ -28,6 +24,10 @@
       {
         "command": "aac.setCustomPrompt",
         "title": "AAC: Set Custom Prompt"
+      },
+      {
+        "command": "aac.showSettingsMenu",
+        "title": "AAC: Show Settings Menu"
       }
     ],
     "problemMatchers": [
