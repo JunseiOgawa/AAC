@@ -14,10 +14,72 @@
   "contributes": {
     "commands": [
       {
-        "command": "aac.helloWorld",
-        "title": "Hello World"
+        "command": "aac.generateCommitMessage",
+        "title": "AAC: Generate Commit Message"
+      },
+      {
+        "command": "aac.toggleAutoCommit",
+        "title": "AAC: Toggle Auto Commit"
+      },
+      {
+        "command": "aac.setApiKey",
+        "title": "AAC: Set Gemini API Key"
+      },
+      {
+        "command": "aac.setCustomPrompt",
+        "title": "AAC: Set Custom Prompt"
       }
-    ]
+    ],
+    "problemMatchers": [
+      {
+        "name": "esbuild-watch",
+        "label": "ESBuild Watch Mode",
+        "owner": "esbuild",
+        "source": "esbuild",
+        "fileLocation": "relative",
+        "pattern": [
+          {
+            "regexp": "^\\s*>\\s*(.*)$",
+            "file": 1
+          },
+          {
+            "regexp": "^\\s*(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "severity": 4,
+            "message": 5
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\[watch\\] build started$",
+          "endsPattern": "^\\[watch\\] build finished$"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "AAC (AutoAiCommit)",
+      "properties": {
+        "aac.geminiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Gemini API キー",
+          "scope": "application"
+        },
+        "aac.autoCommitEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "自動コミットを有効にする"
+        },
+        "aac.customPrompt": {
+          "type": "string",
+          "default": "# 指示\ngit diffから、以下のルールで日本語のコミットメッセージを生成。\n\n# ルール\n- 役割: シニアエンジニア\n- 件名: `【種類】概要` (50字以内)\n- 空行: 件名と本文の間に必須\n- 本文: 変更の背景や内容を箇条書きで記述。補足が必要な場合のみ。\n- 種類: `fix`, `add`, `update`, `change`, `clean`, `disable`, `remove` から最も適切なものを選択。\n- 例外: 回答はメッセージ本体のみ。他の説明は不要。",
+          "description": "Gemini APIに送信するカスタムプロンプト",
+          "editPresentation": "multilineText"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -50,6 +112,9 @@
     "doc": "docs"
   },
   "dependencies": {
+    "@google/genai": "^1.5.1",
+    "@modelcontextprotocol/sdk": "^1.12.3",
+    "@types/ws": "^8.18.1",
     "acorn": "^8.15.0",
     "acorn-jsx": "^5.3.2",
     "agent-base": "^7.1.3",
