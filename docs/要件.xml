@@ -1,0 +1,126 @@
+<requirementDocument>
+    <title>VSC拡張機能の要件定義</title>
+
+    <section number="1" title="概要">
+        <paragraph>ユーザーが git add コマンドなどでファイルをステージングした際に、その変更内容をGemini APIに送信し、自動生成されたコミットメッセージでコミットまでを自動で行うVSCode拡張機能。</paragraph>
+    </section>
+
+    <section number="2" title="機能要件">
+        <introduction>この拡張機能が持つべき具体的な機能です。</introduction>
+        <feature name="変更の検知">
+            <description>VSCode上でファイルがステージング状態になったこと（git add されたこと）を検知します。</description>
+            <implementationNote>VSCodeに組み込まれているGit拡張機能のAPI (vscode.git) を利用して、ステージングエリアの変更を監視するのが最も簡単で確実です。</implementationNote>
+        </feature>
+        <feature name="変更内容の取得">
+            <description>ステージングされたファイルの差分（diff）情報を取得します。</description>
+            <implementationNote>これは拡張機能の内部で git diff --staged コマンドを実行して取得します。</implementationNote>
+        </feature>        <feature name="コミットメッセージの自動生成">
+            <description>取得した diff 情報をGemini APIに送信します。</description>
+            <description>ユーザーが設定で指定したカスタムプロンプトを使用してGeminiにコミットメッセージの生成を依頼します。</description>
+            <description>Geminiから返ってきたコミットメッセージを受け取ります。</description>
+        </feature>        <feature name="自動コミット">
+            <description>Geminiが生成したコミットメッセージを使って、git commit -m "生成されたメッセージ" コマンドを自動で実行します。</description>
+            <description>この機能は設定画面でON/OFFを切り替えることができます。</description>
+        </feature>        <feature name="設定管理">
+            <description>VSCodeの拡張機能設定画面からGemini APIキーを設定できます。</description>
+            <description>APIキーはVSCodeのシークレットストレージに安全に保存されます。</description>
+            <description>自動コミット機能のON/OFFを設定画面から切り替えることができます。</description>
+            <description>コミットメッセージ生成に使用するカスタムプロンプトを設定できます。</description>
+        </feature>
+        <feature name="ユーザーインターフェース">
+            <description>初回起動時に設定画面を自動で表示し、APIキー設定を促します。</description>
+            <description>処理状態（Gemini処理中、コミット完了など）をステータスバーに一定時間表示します。</description>
+            <description>エラー発生時はステータスバーに通知を表示し、クリックするとエラー詳細を確認できます。</description>
+        </feature>
+    </section>
+
+    <section number="3" title="必要なものと技術スタック">
+        <introduction>開発に必要なツールやサービスです。</introduction>
+        <category name="開発言語">
+            <item>TypeScript (VSCode拡張機能の標準)</item>
+        </category>
+        <category name="API">
+            <item name="VSCode API">VSCodeの機能（特にGit連携）を呼び出すために使用します。</item>            <item name="Gemini API">
+                <description>コミットメッセージ生成のためにGoogleのAIを利用します。</description>
+                <note>Google AI StudioでAPIキーを無料で取得できます。無料利用枠があるので、個人開発の範囲であれば十分に無料で利用可能です。</note>
+                <note>APIキーは拡張機能の設定画面で設定し、VSCodeのシークレットストレージに安全に保存されます。</note>
+            </item>
+        </category>
+        <category name="ライブラリ">
+            <item name="@google/generative-ai">Gemini APIを簡単に利用するための公式ライブラリ。</item>
+        </category>
+    </section>
+
+    <section number="4" title="開発の簡単なステップ">
+        <introduction>「サクッと作成したい」というご要望に沿った、開発の基本的な流れです。</introduction>
+        <developmentStep name="環境構築">
+            <action>Node.jsをインストールします。</action>
+            <action>コマンドプロンプト（パワーシェル）で npm install -g yo generator-code を実行し、VSCode拡張機能のひな形作成ツールをインストールします。</action>
+            <action>yo code を実行して、対話形式で拡張機能のプロジェクトを作成します。</action>
+        </developmentStep>
+        <developmentStep name="Gitの変更検知を実装">
+            <action>vscode.git APIを使って、リポジトリのステージング状態が変わったら処理が動くようにプログラムを書きます。</action>
+        </developmentStep>
+        <developmentStep name="差分取得とGemini連携">
+            <action>変更が検知されたら git diff --staged を実行して差分を取得します。</action>
+            <action>取得した差分を、@google/generative-ai ライブラリを使ってGemini APIに送信し、結果を受け取る処理を実装します。</action>
+        </developmentStep>        <developmentStep name="自動コミットの実装">
+            <action>Geminiから受け取ったメッセージを使い、git commit コマンドを実行する処理を実装します。</action>
+        </developmentStep>        <developmentStep name="設定画面の実装">
+            <action>VSCodeの拡張機能設定でGemini APIキーを入力できるようにし、シークレットストレージに保存する仕組みを実装します。</action>
+            <action>自動コミット機能のON/OFF設定を追加します。</action>
+            <action>カスタムプロンプト設定を追加します。</action>
+            <action>初回起動時に設定画面を自動表示する機能を実装します。</action>
+        </developmentStep>
+        <developmentStep name="ユーザーインターフェース実装">
+            <action>ステータスバーに処理状態（Gemini処理中、コミット完了）を表示する機能を実装します。</action>
+            <action>エラー発生時のステータスバー通知とエラー詳細表示機能を実装します。</action>
+        </developmentStep>
+    </section>    <section number="5" title="設定項目">
+        <introduction>拡張機能の設定画面で管理される項目です。</introduction>
+        <setting name="Gemini APIキー">
+            <description>Google AI Studioで取得したGemini APIキーを設定します。</description>
+            <storageType>VSCodeシークレットストレージ</storageType>
+            <note>セキュリティのため、シークレットストレージに暗号化して保存されます。</note>
+            <note>初回起動時に設定画面が自動的に表示され、APIキーの設定を促します。</note>
+        </setting>
+        <setting name="自動コミット有効化">
+            <description>コミットメッセージ生成後に自動でコミットを実行するかどうかを設定します。</description>
+            <type>boolean</type>
+            <default>true</default>
+        </setting>
+        <setting name="カスタムプロンプト">
+            <description>Gemini APIに送信するプロンプトをカスタマイズできます。</description>
+            <type>string</type>
+            <note>後程、具体的なプロンプト内容が指定される予定です。</note>
+        </setting>
+    </section>
+
+    <section number="6" title="エラーハンドリング">
+        <introduction>拡張機能の動作中に発生する可能性のあるエラーへの対応方法です。</introduction>
+        <errorCase name="APIキー未設定">
+            <description>初回起動時またはAPIキーが無効な場合、設定画面を自動表示して設定を促します。</description>
+        </errorCase>
+        <errorCase name="APIリクエスト制限超過">
+            <description>Gemini APIからリクエスト制限超過などのエラーが返ってきた場合、ステータスバーに通知を表示します。</description>
+            <description>通知をクリックすることで、エラー詳細を確認できるようにします。</description>
+        </errorCase>
+        <errorCase name="処理失敗">
+            <description>その他の処理失敗時も同様に、ステータスバーに通知し、詳細を確認できる仕組みを提供します。</description>
+        </errorCase>
+    </section>
+
+    <section number="7" title="仕様制限">
+        <introduction>拡張機能の動作範囲や制限事項です。</introduction>
+        <limitation name="対象Gitプロバイダー">
+            <description>主にGitHubリポジトリでの使用を想定しています。</description>
+        </limitation>
+        <limitation name="対象変更">
+            <description>git addコマンドでステージングされたファイルのみが対象となります。</description>
+            <note>ファイル/フォルダの除外設定は不要です。</note>
+        </limitation>
+        <limitation name="パフォーマンス">
+            <description>初期実装ではパフォーマンスの最適化は行わず、必要に応じて後から対応します。</description>
+        </limitation>
+    </section>
+</requirementDocument>
