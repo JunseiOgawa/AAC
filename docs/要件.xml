@@ -2,7 +2,7 @@
     <title>VSC拡張機能の要件定義</title>
 
     <section number="1" title="概要">
-        <paragraph>ユーザーが git add コマンドなどでファイルをステージングした際に、その変更内容をGemini APIに送信し、自動生成されたコミットメッセージでコミットまでを自動で行うVSCode拡張機能。</paragraph>
+        <paragraph>ユーザーが git add コマンドなどでファイルをステージングした際に、その内容をGemini APIに送信し、自動生成されたコミットメッセージでコミットまでを自動で行うVSCode拡張機能。</paragraph>
     </section>
 
     <section number="2" title="機能要件">
@@ -110,7 +110,46 @@
         </errorCase>
     </section>
 
-    <section number="7" title="仕様制限">
+    <section number="7" title="バージョン管理とパブリッシュ">
+        <introduction>拡張機能のバージョン管理と公開に関する手順です。</introduction>
+        <category name="バージョンアップ">
+            <item name="自動バージョンインクリメント">
+                <description>vsce publishコマンドでSemVer互換の番号を指定して、バージョン番号を自動的にインクリメントできます。</description>
+                <example>
+                    <command>vsce publish minor</command>
+                    <description>1.0.0 から 1.1.0 にバージョンアップ（minor版上げ）</description>
+                </example>
+                <example>
+                    <command>vsce publish patch</command>
+                    <description>1.0.0 から 1.0.1 にバージョンアップ（patch版上げ）</description>
+                </example>
+                <example>
+                    <command>vsce publish major</command>
+                    <description>1.0.0 から 2.0.0 にバージョンアップ（major版上げ）</description>
+                </example>
+                <example>
+                    <command>vsce publish 1.1.0</command>
+                    <description>具体的なバージョン番号を指定してバージョンアップ</description>
+                </example>
+            </item>
+            <item name="自動処理">
+                <description>どちらのコマンドも、最初に拡張機能のpackage.jsonのversion属性を変更し、更新されたバージョンで公開します。</description>
+                <description>Gitリポジトリで実行すると、npm-version経由でバージョンコミットとタグも自動作成されます。</description>
+                <description>デフォルトのコミットメッセージは拡張機能のバージョンになります。</description>
+                <description>-mフラグを使用してカスタムコミットメッセージを指定することも可能です（%sで現在のバージョンを参照可能）。</description>
+            </item>
+        </category>
+        <category name="公開手順">
+            <item name="事前準備">
+                <description>vsce (Visual Studio Code Extension Manager) をインストールします。</description>
+                <command>npm install -g vsce</command>
+            </item>
+            <item name="公開実行">
+                <description>プロジェクトルートで以下のコマンドを実行してバージョンアップと公開を同時に行います。</description>
+                <note>初回公開時はVisual Studio Marketplaceへのアカウント登録が必要です。</note>
+            </item>
+        </category>
+    </section>    <section number="9" title="仕様制限">
         <introduction>拡張機能の動作範囲や制限事項です。</introduction>
         <limitation name="対象Gitプロバイダー">
             <description>主にGitHubリポジトリでの使用を想定しています。</description>
