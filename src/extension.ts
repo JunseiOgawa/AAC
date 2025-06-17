@@ -25,20 +25,42 @@ class AACExtension {
     }
 
     async initialize() {
-        // Git拡張機能を取得
-        const gitExtension = vscode.extensions.getExtension('vscode.git');
-        if (gitExtension) {
-            this.gitExtension = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
-            this.setupGitWatcher();
-        } else {
-            vscode.window.showErrorMessage('Git拡張機能が見つかりません。');
-        }
-
-        // 初回起動時のAPIキー確認
-        await this.checkApiKeySetup();
+        console.log('=== AAC拡張機能の初期化開始 ===');
         
-        // ステータスバーの初期表示を更新
-        await this.updateStatusBarDefault();
+        try {
+            // Git拡張機能を取得
+            const gitExtension = vscode.extensions.getExtension('vscode.git');
+            if (gitExtension) {
+                console.log('Git拡張機能が見つかりました');
+                this.gitExtension = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+                console.log('Git拡張機能の状態:', gitExtension.isActive ? 'アクティブ' : 'アクティベート済み');
+                
+                // Git API の確認
+                if (this.gitExtension?.getAPI) {
+                    const git = this.gitExtension.getAPI(1);
+                    console.log('Git API バージョン 1 を取得しました');
+                    console.log('利用可能なメソッド:', Object.getOwnPropertyNames(git));
+                    this.setupGitWatcher();
+                } else {
+                    console.error('Git API が利用できません');
+                    vscode.window.showErrorMessage('Git API が利用できません。VSCodeを再起動してください。');
+                }
+            } else {
+                console.error('Git拡張機能が見つかりません');
+                vscode.window.showErrorMessage('Git拡張機能が見つかりません。');
+            }
+
+            // 初回起動時のAPIキー確認
+            await this.checkApiKeySetup();
+            
+            // ステータスバーの初期表示を更新
+            await this.updateStatusBarDefault();
+            
+            console.log('=== AAC拡張機能の初期化完了 ===');
+        } catch (error) {
+            console.error('AAC拡張機能の初期化でエラーが発生:', error);
+            vscode.window.showErrorMessage(`AAC初期化エラー: ${error instanceof Error ? error.message : error}`);
+        }
     }
 
     private async checkApiKeySetup() {
@@ -58,68 +80,131 @@ class AACExtension {
 
     private setupGitWatcher() {
         if (!this.gitExtension?.getAPI) {
+            console.error('Git API が取得できません');
             return;
         }
 
         const git = this.gitExtension.getAPI(1);
+        console.log('Git API オブジェクト:', git);
+        console.log('Git API メソッド:', Object.getOwnPropertyNames(git));
         
         // リポジトリの変更を監視
-        git.onDidChangeRepositories(() => {
-            this.watchAllRepositories(git);
-        });
+        if (git.onDidOpenRepository) {
+            git.onDidOpenRepository(() => {
+                console.log('新しいリポジトリが開かれました');
+                this.watchAllRepositories(git);
+            });
+        }
+        
+        if (git.onDidCloseRepository) {
+            git.onDidCloseRepository(() => {
+                console.log('リポジトリが閉じられました');
+                this.watchAllRepositories(git);
+            });
+        }
 
         // 既存のリポジトリを監視
         this.watchAllRepositories(git);
     }
 
     private watchAllRepositories(git: any) {
-        git.repositories.forEach((repo: any) => {
+        console.log('=== リポジトリ監視を開始 ===');
+        console.log('リポジトリ数:', git.repositories?.length || 0);
+        
+        if (!git.repositories || git.repositories.length === 0) {
+            console.warn('監視するリポジトリが見つかりません');
+            vscode.window.showWarningMessage('AAC: Gitリポジトリが見つかりません。ワークスペースにGitリポジトリがあることを確認してください。');
+            return;
+        }
+        
+        git.repositories.forEach((repo: any, index: number) => {
+            console.log(`リポジトリ ${index + 1}:`, repo.rootUri?.fsPath);
+            console.log(`リポジトリ ${index + 1} の状態:`, repo.state);
+            
             // ステージングエリアの変更を監視
-            repo.state.onDidChange(() => {
+            const disposable = repo.state.onDidChange(() => {
+                console.log(`リポジトリ ${index + 1} の状態が変更されました`);
                 this.handleRepositoryChange(repo);
             });
+            
+            // disposableをcontext.subscriptionsに追加
+            this.context.subscriptions.push(disposable);
         });
     }
 
     private async handleRepositoryChange(repo: any) {
+        console.log('=== リポジトリ変更を検知 ===');
+        console.log('処理中フラグ:', this.isProcessing);
+        console.log('リポジトリパス:', repo.rootUri?.fsPath);
+        console.log('リポジトリ状態:', repo.state);
+        console.log('インデックス変更:', repo.state.indexChanges);
+        console.log('作業ディレクトリ変更:', repo.state.workingTreeChanges);
+        
         if (this.isProcessing) {
+            console.log('既に処理中のため、スキップします');
             return;
         }
 
         // ステージングされたファイルがあるかチェック
         const stagedChanges = repo.state.indexChanges;
+        console.log('ステージングされたファイル数:', stagedChanges.length);
+        
         if (stagedChanges.length > 0) {
             console.log('ステージングされた変更を検知しました');
+            console.log('ステージングされたファイル:', stagedChanges.map((change: any) => change.uri.fsPath));
+            
+            // ステータスバーの表示を更新
+            this.updateStatusBar('$(sync~spin) AAC: 検知済み', 'ステージングされた変更を検知');
+            
             await this.generateCommitMessage(repo);
+        } else {
+            console.log('ステージングされた変更はありません');
         }
     }
 
     private async generateCommitMessage(repo: any) {
+        console.log('=== コミットメッセージ生成開始 ===');
+        
         this.isProcessing = true;
         this.updateStatusBar('$(sync~spin) AAC: 処理中...', 'コミットメッセージを生成中');
 
         try {
             const config = await this.getConfig();
             
+            console.log('設定:', {
+                hasApiKey: !!config.geminiApiKey,
+                autoCommitEnabled: config.autoCommitEnabled,
+                customPrompt: config.customPrompt.substring(0, 100) + '...'
+            });
+            
             if (!config.geminiApiKey) {
                 throw new Error('Gemini APIキーが設定されていません。設定画面で設定してください。');
             }
 
             // git diff --staged を実行して差分を取得
+            console.log('ステージングされた差分を取得中...');
             const diff = await this.getStagedDiff(repo.rootUri.fsPath);
+            
+            console.log('取得した差分の文字数:', diff.length);
+            console.log('差分プレビュー:', diff.substring(0, 200) + '...');
             
             if (!diff.trim()) {
                 throw new Error('ステージングされた変更が見つかりません。');
             }
 
             // Gemini APIでコミットメッセージを生成
+            console.log('Gemini APIを呼び出し中...');
             const commitMessage = await this.callGeminiAPI(config, diff);
+            
+            console.log('生成されたコミットメッセージ:', commitMessage);
             
             // 自動コミットが有効な場合はコミット実行
             if (config.autoCommitEnabled) {
+                console.log('自動コミットを実行中...');
                 await this.performCommit(repo, commitMessage);
                 vscode.window.showInformationMessage(`自動コミットが完了しました: ${commitMessage}`);
             } else {
+                console.log('手動確認モード');
                 // 手動確認
                 const action = await vscode.window.showInformationMessage(
                     `生成されたコミットメッセージ: ${commitMessage}`,
@@ -128,16 +213,20 @@ class AACExtension {
                 );
                 
                 if (action === 'コミットする') {
+                    console.log('ユーザーがコミットを承認');
                     await this.performCommit(repo, commitMessage);
                     vscode.window.showInformationMessage('コミットが完了しました。');
+                } else {
+                    console.log('ユーザーがコミットをキャンセル');
                 }
             }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました';
-            vscode.window.showErrorMessage(`AAC エラー: ${errorMessage}`);
             console.error('AAC Error:', error);
+            vscode.window.showErrorMessage(`AAC エラー: ${errorMessage}`);
         } finally {
+            console.log('=== コミットメッセージ生成終了 ===');
             this.isProcessing = false;
             await this.updateStatusBarDefault();
         }
@@ -347,28 +436,45 @@ git diffから、以下のルールで日本語のコミットメッセージを
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('AAC (AutoAiCommit) が起動しました');
+    
+    // 強制的に通知を表示してデバッグ
+    vscode.window.showInformationMessage('AAC拡張機能が起動しました！');
 
     const aacExtension = new AACExtension(context);
-    aacExtension.initialize();
+    
+    // 初期化を非同期で実行
+    aacExtension.initialize().then(() => {
+        console.log('AAC初期化が完了しました');
+        vscode.window.showInformationMessage('AAC初期化が完了しました');
+    }).catch((error) => {
+        console.error('AAC初期化でエラー:', error);
+        vscode.window.showErrorMessage(`AAC初期化エラー: ${error}`);
+    });
 
     // コマンドの登録
     const toggleCommand = vscode.commands.registerCommand('aac.toggleAutoCommit', () => {
+        console.log('toggleAutoCommit コマンドが実行されました');
         aacExtension.toggleAutoCommit();
     });
 
     const setApiKeyCommand = vscode.commands.registerCommand('aac.setApiKey', () => {
+        console.log('setApiKey コマンドが実行されました');
         aacExtension.setApiKey();
     });
 
     const setCustomPromptCommand = vscode.commands.registerCommand('aac.setCustomPrompt', () => {
+        console.log('setCustomPrompt コマンドが実行されました');
         aacExtension.setCustomPrompt();
     });
 
     const showSettingsMenuCommand = vscode.commands.registerCommand('aac.showSettingsMenu', () => {
+        console.log('showSettingsMenu コマンドが実行されました');
         aacExtension.showSettingsMenu();
     });
 
     context.subscriptions.push(toggleCommand, setApiKeyCommand, setCustomPromptCommand, showSettingsMenuCommand);
+    
+    console.log('=== AAC activate関数が完了しました ===');
 }
 
 export function deactivate() {
