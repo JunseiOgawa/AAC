@@ -10,9 +10,33 @@ interface AACConfig {
     customPrompt: string;
 }
 
+// Git API の型定義
+interface GitAPI {
+    repositories: GitRepository[];
+    onDidOpenRepository?: (listener: () => void) => vscode.Disposable;
+    onDidCloseRepository?: (listener: () => void) => vscode.Disposable;
+    getAPI(version: number): GitAPI;
+}
+
+interface GitRepository {
+    rootUri: vscode.Uri;
+    state: GitRepositoryState;
+}
+
+interface GitRepositoryState {
+    indexChanges: GitChange[];
+    workingTreeChanges: GitChange[];
+    onDidChange: vscode.Event<void>;
+}
+
+interface GitChange {
+    uri: vscode.Uri;
+    status: number;
+}
+
 class AACExtension {
     private statusBarItem: vscode.StatusBarItem;
-    private gitExtension: any;
+    private gitApi: GitAPI | undefined;
     private isProcessing: boolean = false;
 
     constructor(private context: vscode.ExtensionContext) {
@@ -32,14 +56,14 @@ class AACExtension {
             const gitExtension = vscode.extensions.getExtension('vscode.git');
             if (gitExtension) {
                 console.log('Git拡張機能が見つかりました');
-                this.gitExtension = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+                const gitApi = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
                 console.log('Git拡張機能の状態:', gitExtension.isActive ? 'アクティブ' : 'アクティベート済み');
                 
                 // Git API の確認
-                if (this.gitExtension?.getAPI) {
-                    const git = this.gitExtension.getAPI(1);
+                if (gitApi?.getAPI) {
+                    this.gitApi = gitApi.getAPI(1);
                     console.log('Git API バージョン 1 を取得しました');
-                    console.log('利用可能なメソッド:', Object.getOwnPropertyNames(git));
+                    console.log('利用可能なメソッド:', Object.getOwnPropertyNames(this.gitApi));
                     this.setupGitWatcher();
                 } else {
                     console.error('Git API が利用できません');
@@ -78,46 +102,51 @@ class AACExtension {
         }
     }
 
-    private setupGitWatcher() {
-        if (!this.gitExtension?.getAPI) {
+    private setupGitWatcher(): void {
+        if (!this.gitApi) {
             console.error('Git API が取得できません');
             return;
         }
 
-        const git = this.gitExtension.getAPI(1);
-        console.log('Git API オブジェクト:', git);
-        console.log('Git API メソッド:', Object.getOwnPropertyNames(git));
+        console.log('Git API オブジェクト:', this.gitApi);
+        console.log('Git API メソッド:', Object.getOwnPropertyNames(this.gitApi));
         
         // リポジトリの変更を監視
-        if (git.onDidOpenRepository) {
-            git.onDidOpenRepository(() => {
+        if (this.gitApi.onDidOpenRepository) {
+            this.gitApi.onDidOpenRepository(() => {
                 console.log('新しいリポジトリが開かれました');
-                this.watchAllRepositories(git);
+                this.watchAllRepositories();
             });
         }
         
-        if (git.onDidCloseRepository) {
-            git.onDidCloseRepository(() => {
+        if (this.gitApi.onDidCloseRepository) {
+            this.gitApi.onDidCloseRepository(() => {
                 console.log('リポジトリが閉じられました');
-                this.watchAllRepositories(git);
+                this.watchAllRepositories();
             });
         }
 
         // 既存のリポジトリを監視
-        this.watchAllRepositories(git);
+        this.watchAllRepositories();
     }
 
-    private watchAllRepositories(git: any) {
+    private watchAllRepositories(): void {
         console.log('=== リポジトリ監視を開始 ===');
-        console.log('リポジトリ数:', git.repositories?.length || 0);
         
-        if (!git.repositories || git.repositories.length === 0) {
+        if (!this.gitApi) {
+            console.error('Git API が利用できません');
+            return;
+        }
+        
+        console.log('リポジトリ数:', this.gitApi.repositories?.length || 0);
+        
+        if (!this.gitApi.repositories || this.gitApi.repositories.length === 0) {
             console.warn('監視するリポジトリが見つかりません');
             vscode.window.showWarningMessage('AAC: Gitリポジトリが見つかりません。ワークスペースにGitリポジトリがあることを確認してください。');
             return;
         }
         
-        git.repositories.forEach((repo: any, index: number) => {
+        this.gitApi.repositories.forEach((repo: GitRepository, index: number) => {
             console.log(`リポジトリ ${index + 1}:`, repo.rootUri?.fsPath);
             console.log(`リポジトリ ${index + 1} の状態:`, repo.state);
             
@@ -132,7 +161,7 @@ class AACExtension {
         });
     }
 
-    private async handleRepositoryChange(repo: any) {
+    private async handleRepositoryChange(repo: GitRepository): Promise<void> {
         console.log('=== リポジトリ変更を検知 ===');
         console.log('処理中フラグ:', this.isProcessing);
         console.log('リポジトリパス:', repo.rootUri?.fsPath);
@@ -162,7 +191,7 @@ class AACExtension {
         }
     }
 
-    private async generateCommitMessage(repo: any) {
+    private async generateCommitMessage(repo: GitRepository): Promise<void> {
         console.log('=== コミットメッセージ生成開始 ===');
         
         this.isProcessing = true;
@@ -277,7 +306,7 @@ class AACExtension {
         }
     }
 
-    private async performCommit(repo: any, message: string) {
+    private async performCommit(repo: GitRepository, message: string): Promise<void> {
         try {
             await execAsync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { 
                 cwd: repo.rootUri.fsPath 
@@ -311,7 +340,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         };
     }
 
-    private updateStatusBar(text?: string, tooltip?: string) {
+    private updateStatusBar(text?: string, tooltip?: string): void {
         if (text && tooltip) {
             this.statusBarItem.text = text;
             this.statusBarItem.tooltip = tooltip;
@@ -321,7 +350,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         }
     }
 
-    private async updateStatusBarDefault() {
+    private async updateStatusBarDefault(): Promise<void> {
         const config = vscode.workspace.getConfiguration('aac');
         const autoCommitEnabled = config.get<boolean>('autoCommitEnabled', false);
         const hasApiKey = !!(await this.context.secrets.get('aac.geminiApiKey'));
@@ -333,7 +362,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         this.statusBarItem.tooltip = `AutoAiCommit - 自動コミット: ${autoCommitEnabled ? '有効' : '無効'}, APIキー: ${hasApiKey ? '設定済み' : '未設定'} (クリックで設定メニュー)`;
     }
 
-    toggleAutoCommit() {
+    toggleAutoCommit(): void {
         const config = vscode.workspace.getConfiguration('aac');
         const currentValue = config.get<boolean>('autoCommitEnabled', false);
         config.update('autoCommitEnabled', !currentValue, vscode.ConfigurationTarget.Global);
@@ -345,7 +374,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         this.updateStatusBarDefault();
     }
 
-    async setApiKey() {
+    async setApiKey(): Promise<void> {
         const apiKey = await vscode.window.showInputBox({
             prompt: 'Gemini APIキーを入力してください',
             placeHolder: 'Google AI Studioで取得したAPIキーを入力',
@@ -362,7 +391,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         }
     }
 
-    async setCustomPrompt() {
+    async setCustomPrompt(): Promise<void> {
         const config = vscode.workspace.getConfiguration('aac');
         const currentPrompt = config.get<string>('customPrompt', '');
         
@@ -379,7 +408,7 @@ git diffから、以下のルールで日本語のコミットメッセージを
         }
     }
 
-    async showSettingsMenu() {
+    async showSettingsMenu(): Promise<void> {
         const config = vscode.workspace.getConfiguration('aac');
         const autoCommitEnabled = config.get<boolean>('autoCommitEnabled', false);
         const hasApiKey = !!(await this.context.secrets.get('aac.geminiApiKey'));
