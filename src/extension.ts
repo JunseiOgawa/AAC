@@ -276,11 +276,24 @@ class AACExtension {
             
             const ai = new GoogleGenAI({apiKey: config.geminiApiKey});
 
+            // diffのサイズをチェックして制限する（Gemini APIの制限考慮）
+            const maxDiffLength = 50000; // 約50KB制限
+            let processedDiff = diff;
+            
+            if (diff.length > maxDiffLength) {
+                console.warn(`差分が大きすぎます（${diff.length}文字）。要約して送信します。`);
+                processedDiff = this.summarizeLargeDiff(diff, maxDiffLength);
+                vscode.window.showWarningMessage(`差分が大きいため、要約してコミットメッセージを生成します。`);
+            }
+
             const prompt = `${config.customPrompt}
-													# 入力
-													\`\`\`
-													${diff}
-													\`\`\``;
+
+# 入力
+${processedDiff}`;
+
+            console.log('送信するプロンプト:', prompt.substring(0, 500) + '...');
+            console.log('プロンプト全体の文字数:', prompt.length);
+            console.log('差分の文字数:', processedDiff.length);
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.0-flash-001',
@@ -293,7 +306,9 @@ class AACExtension {
             }
             
             // AIの返答からコミットメッセージを抽出・クリーンアップ
+            console.log('Gemini APIからの生の返答:', text.substring(0, 200) + '...');
             const cleanedMessage = this.cleanCommitMessage(text);
+            console.log('クリーンアップ後のメッセージ:', cleanedMessage);
             
             if (!cleanedMessage) {
                 throw new Error('有効なコミットメッセージを生成できませんでした');
@@ -389,36 +404,35 @@ class AACExtension {
 
     private async getConfig(): Promise<AACConfig> {
         const config = vscode.workspace.getConfiguration('aac');
-        
         // シークレットストレージからAPIキーを取得
         const apiKey = await this.context.secrets.get('aac.geminiApiKey') || '';
-        
-        return {
-            geminiApiKey: apiKey,
-            autoCommitEnabled: config.get<boolean>('autoCommitEnabled', false),
-            customPrompt: config.get<string>('customPrompt', 
-                `# 指示 git diffから、以下のルールで日本語のコミットメッセージを生成。
-# ルール
+
+        // デフォルトのプロンプトを定義
+        const defaultPrompt = `ルール:
 - 役割: シニアエンジニア
-- 件名: 【種類】概要 (50字以内を推奨。簡潔かつ内容が明確であれば、文字数に厳密にこだわる必要はない。)
+- 件名: 【種類】概要 (50字以内目安)
 - 空行: 件名と本文の間に必須
-- 本文: 変更の背景や内容を記述。箇条書きの記号（・など）は不要。補足が必要な場合のみ簡潔に記述する。
-- 種類: 【fix】, 【add】, 【update】, 【change】, 【clean】, 【disable】, 【remove】 から最も適切なものを選択し、**必ず角括弧と日本語の「種類」を組み合わせた形式で出力すること。**
+- 本文: 変更の背景や内容を記述。箇条書き・補足は不要。
+- 種類: 【fix】, 【add】, 【update】, 【change】, 【clean】, 【disable】, 【remove】から選択し、必ず【日本語の種類】の形式で出力。コロン他記号は含めない。
 
-# 重要な制約
-- コミットメッセージのみを出力してください
-- コードブロック記号（\`\`\`、'''、\`）は一切使用しないでください
-- 「コミットメッセージ：」などの前置きも不要です
-- マークダウン記号（#、**、*）も使用しないでください
-- 説明文や補足説明は含めないでください
+制約:
+- コミットメッセージのみ出力。
+- コードブロック記号、前置き、マークダウン記号、説明文・補足説明は一切使用禁止。
 
-# 出力例
+出力例:
 【fix】ユーザー認証時のエラーハンドリングを修正
 
+絶対に避ける例
+fix:ユーザー認証時のエラーハンドリングを修正
+
 nullチェック処理を追加
-エラーメッセージの表示を改善`
-            )
-        };
+エラーメッセージの表示を改善`;
+
+    return {
+        geminiApiKey: apiKey,
+        autoCommitEnabled: config.get<boolean>('autoCommitEnabled', false),
+        customPrompt: config.get<string>('customPrompt', defaultPrompt)
+    };
     }
 
     private updateStatusBar(text?: string, tooltip?: string): void {
@@ -541,6 +555,66 @@ nullチェック処理を追加
                     break;
             }
         }
+    }
+
+    private summarizeLargeDiff(diff: string, maxLength: number): string {
+        if (diff.length <= maxLength) {
+            return diff;
+        }
+
+        const lines = diff.split('\n');
+        const summarizedLines: string[] = [];
+        let currentLength = 0;
+        let addedFiles = 0;
+        let modifiedFiles = 0;
+        let deletedFiles = 0;
+
+        // ファイル変更の統計を収集
+        for (const line of lines) {
+            if (line.startsWith('diff --git')) {
+                if (line.includes('new file')) {
+                    addedFiles++;
+                } else if (line.includes('deleted file')) {
+                    deletedFiles++;
+                } else {
+                    modifiedFiles++;
+                }
+            }
+        }
+
+        // 重要な部分を優先的に含める
+        for (const line of lines) {
+            // ファイル名とハンクヘッダーは重要なので含める
+            if (line.startsWith('diff --git') || 
+                line.startsWith('+++') || 
+                line.startsWith('---') || 
+                line.startsWith('@@')) {
+                if (currentLength + line.length + 1 <= maxLength) {
+                    summarizedLines.push(line);
+                    currentLength += line.length + 1;
+                }
+            }
+            // 変更内容も制限内で含める
+            else if ((line.startsWith('+') || line.startsWith('-')) && 
+                     !line.startsWith('+++') && !line.startsWith('---')) {
+                if (currentLength + line.length + 1 <= maxLength - 200) { // 統計情報用の余裕を残す
+                    summarizedLines.push(line);
+                    currentLength += line.length + 1;
+                }
+            }
+        }
+
+        // 統計情報を追加
+        const summary = `
+# 変更統計
+- 新規ファイル: ${addedFiles}個
+- 変更ファイル: ${modifiedFiles}個  
+- 削除ファイル: ${deletedFiles}個
+- 総変更行数: ${lines.filter(l => l.startsWith('+') || l.startsWith('-')).length}行
+
+(大きな差分のため要約されています)`;
+
+        return summarizedLines.join('\n') + summary;
     }
 }
 
