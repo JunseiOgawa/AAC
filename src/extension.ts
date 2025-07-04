@@ -292,7 +292,14 @@ class AACExtension {
                 throw new Error('Gemini APIからレスポンステキストを取得できませんでした');
             }
             
-            return text.trim();
+            // AIの返答からコミットメッセージを抽出・クリーンアップ
+            const cleanedMessage = this.cleanCommitMessage(text);
+            
+            if (!cleanedMessage) {
+                throw new Error('有効なコミットメッセージを生成できませんでした');
+            }
+            
+            return cleanedMessage;
             
         } catch (error) {
             if (error instanceof Error) {
@@ -304,6 +311,70 @@ class AACExtension {
             }
             throw new Error(`Gemini APIの呼び出しに失敗しました: ${error instanceof Error ? error.message : error}`);
         }
+    }
+
+    private cleanCommitMessage(rawMessage: string): string {
+        // 基本的なトリム
+        let message = rawMessage.trim();
+        
+        // コードブロック記号の除去（各行ごとに処理）
+        const lines = message.split('\n');
+        const cleanedLines: string[] = [];
+        
+        for (let line of lines) {
+            line = line.trim();
+            
+            // コードブロック記号のみの行をスキップ
+            if (line === '```' || line === "'''" || line === '`' || 
+                line.startsWith('```') || line.startsWith("'''")) {
+                continue;
+            }
+            
+            // マークダウン記号を除去
+            line = line.replace(/^#+\s*/, '');            // ヘッダー記号
+            line = line.replace(/^\*\*(.+)\*\*$/, '$1');  // 太字
+            line = line.replace(/^\*(.+)\*$/, '$1');      // イタリック
+            line = line.replace(/^`(.+)`$/, '$1');        // インラインコード
+            
+            // 説明文パターンを除去
+            if (line.match(/^(以下|上記|この|コミットメッセージ|生成|作成|変更|について)/)) {
+                continue;
+            }
+            if (line.includes('説明') || line.includes('について')) {
+                continue;
+            }
+            
+            // 前置きを除去
+            line = line.replace(/^(コミットメッセージ：?|メッセージ：?)\s*/, '');
+            
+            // 空でない行のみ追加
+            if (line.length > 0) {
+                cleanedLines.push(line);
+            }
+        }
+        
+        // 配列を結合し直す
+        message = cleanedLines.join('\n').trim();
+        
+        // 連続する空行を1つに正規化
+        message = message.replace(/\n\s*\n\s*\n/g, '\n\n');
+        
+        // 最終チェック：有効なメッセージかどうか
+        if (!message || message.length < 3) {
+            return '';
+        }
+        
+        // 最初の行（件名）が適切かチェック
+        const messageLines = message.split('\n');
+        const subject = messageLines[0].trim();
+        
+        // 件名が空、または記号のみの場合は無効
+        if (!subject || subject.length < 3 || 
+            subject === '```' || subject === "'''" || subject === '`') {
+            return '';
+        }
+        
+        return message;
     }
 
     private async performCommit(repo: GitRepository, message: string): Promise<void> {
@@ -335,7 +406,19 @@ git diffから、以下のルールで日本語のコミットメッセージを
 - 空行: 件名と本文の間に必須
 - 本文: 変更の背景や内容を箇条書きで記述。補足が必要な場合のみ。
 - 種類: \`fix\`, \`add\`, \`update\`, \`change\`, \`clean\`, \`disable\`, \`remove\` から最も適切なものを選択。
-- 例外: 回答はメッセージ本体のみ。他の説明は不要。`
+
+# 重要な制約
+- コミットメッセージのみを出力してください
+- コードブロック記号（\`\`\`、'''、\`）は一切使用しないでください
+- 「コミットメッセージ：」などの前置きも不要です
+- マークダウン記号（#、**、*）も使用しないでください
+- 説明文や補足説明は含めないでください
+
+# 出力例
+【fix】ユーザー認証時のエラーハンドリングを修正
+
+- nullチェック処理を追加
+- エラーメッセージの表示を改善`
             )
         };
     }
