@@ -292,6 +292,8 @@ class AACExtension {
 ${processedDiff}`;
 
             console.log('送信するプロンプト:', prompt.substring(0, 500) + '...');
+            // 送信するプロンプト全体をログに出力（トリミングなし）
+            console.log('送信するプロンプト (全体):', prompt);
             console.log('プロンプト全体の文字数:', prompt.length);
             console.log('差分の文字数:', processedDiff.length);
 
@@ -404,12 +406,11 @@ ${processedDiff}`;
 
     private async getConfig(): Promise<AACConfig> {
         const config = vscode.workspace.getConfiguration('aac');
-        // シークレットストレージからAPIキーを取得
         const apiKey = await this.context.secrets.get('aac.geminiApiKey') || '';
 
         // デフォルトのプロンプトを定義
         const defaultPrompt = `ルール:
-- 役割: シニアエンジニア
+- 役割: エンジニア
 - 件名: 【種類】概要 (50字以内目安)
 - 空行: 件名と本文の間に必須
 - 本文: 変更の背景や内容を記述。箇条書き・補足は不要。
@@ -420,7 +421,7 @@ ${processedDiff}`;
 - コードブロック記号、前置き、マークダウン記号、説明文・補足説明は一切使用禁止。
 
 出力例:
-【fix】ユーザー認証時のエラーハンドリングを修正
+【add】小型スマートフォン向けのレスポンシブ対応【fix】ユーザー認証時のエラーハンドリングを修正
 
 絶対に避ける例
 fix:ユーザー認証時のエラーハンドリングを修正
@@ -428,11 +429,17 @@ fix:ユーザー認証時のエラーハンドリングを修正
 nullチェック処理を追加
 エラーメッセージの表示を改善`;
 
-    return {
-        geminiApiKey: apiKey,
-        autoCommitEnabled: config.get<boolean>('autoCommitEnabled', false),
-        customPrompt: config.get<string>('customPrompt', defaultPrompt)
-    };
+        // カスタムプロンプトが未設定または空文字の場合は defaultPrompt を使う
+        const customPromptSetting = config.get<string>('customPrompt', '');
+        const customPrompt = customPromptSetting && customPromptSetting.trim().length > 0
+            ? customPromptSetting
+            : defaultPrompt;
+
+        return {
+            geminiApiKey: apiKey,
+            autoCommitEnabled: config.get<boolean>('autoCommitEnabled', false),
+            customPrompt
+        };
     }
 
     private updateStatusBar(text?: string, tooltip?: string): void {

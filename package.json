@@ -77,7 +77,7 @@
         },
         "aac.customPrompt": {
           "type": "string",
-          "default": "# 指示\ngit diffから、以下のルールで日本語のコミットメッセージを生成。\n\n# ルール\n- 役割: シニアエンジニア\n- 件名: `【種類】概要` (50字以内)\n- 空行: 件名と本文の間に必須\n- 本文: 変更の背景や内容を箇条書きで記述。補足が必要な場合のみ。\n- 種類: `fix`, `add`, `update`, `change`, `clean`, `disable`, `remove` から最も適切なものを選択。\n- 例外: 回答はメッセージ本体のみ。他の説明は不要。",
+          "default": "",
           "description": "Gemini APIに送信するカスタムプロンプト",
           "editPresentation": "multilineText"
         }
