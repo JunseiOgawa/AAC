@@ -2,7 +2,7 @@
   "name": "autoaicommit",
   "displayName": "AutoAICommit",
   "description": "AutoAiCommit AIに自動的にコミット内容を見てもらって見やすいコミットにしよう！！ ",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "JunseiOgawa",
   "engines": {
     "vscode": "^1.101.0"
